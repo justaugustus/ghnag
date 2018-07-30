@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 
 	"golang.org/x/oauth2"
@@ -38,7 +39,7 @@ var (
 	// This list of organizations comes from:
 	// https://github.com/kubernetes/community/blob/master/org-owners-guide.md#current-organizations-in-use
 	orgs = []string{
-		"collabit",
+		"kubernetes",
 		/*
 			"kubernetes",
 			"kubernetes-client",
@@ -50,16 +51,54 @@ var (
 		*/
 	}
 
-	repos = []string{
-		"thangs",
+	defaultRepos = []string{
+		"features",
 	}
 
 	// issueTitle   = "Create a SECURITY_CONTACTS file."
-	comment = `This is a really great comment.
+	comment = `This feature current has no milestone, so we'd like to check in and see if there are any plans for this in Kubernetes 1.12.
+
+If so, please ensure that this issue is up-to-date with ALL of the following information:
+- One-line feature description (can be used as a release note):
+- Primary contact (assignee):
+- Responsible SIGs:
+- Design proposal link (community repo):
+- Link to e2e and/or unit tests:
+- Reviewer(s) - (for LGTM) recommend having 2+ reviewers (at least one from code-area OWNERS file) agreed to review. Reviewers from multiple companies preferred:
+- Approver (likely from SIG/area to which feature belongs):
+- Feature target (which target equals to which milestone):
+	- Alpha release target (x.y)
+	- Beta release target (x.y)
+	- Stable release target (x.y)
+
+Set the following:
+- Description
+- Assignee(s)
+- Labels:
+	- stage/{alpha,beta,stable}
+	- sig/*
+	- kind/feature
+
+Once this feature is appropriately updated, please explicitly ping @justaugustus, @kacole2, @robertsandoval, @rajendar38 to note that it is ready to be included in the [Features Tracking Spreadsheet for Kubernetes 1.12](http://bit.ly/k8s112-features).
+
+---
+
+### Please note that Features Freeze is **tomorrow, July 31st**, after which any incomplete Feature issues will require an [Exception request](https://github.com/kubernetes/features/blob/master/EXCEPTIONS.md) to be accepted into the milestone.
+
+#### In addition, please be aware of the following relevant deadlines:
+- Docs deadline (open placeholder PRs): 8/21
+- Test case freeze: 8/28
+
+Please make sure all PRs for features have relevant release notes included as well.
+
+Happy shipping!
+
+P.S. This was sent via automation
 `
 
 	repoListOptions = github.IssueListByRepoOptions{
-		State:     "open",
+		State: "open",
+		// TODO: Milestone search doesn't work for version e.g., "v1.12"
 		Milestone: "none",
 		// TODO: Add support for label filters
 		Labels: []string{
@@ -130,12 +169,20 @@ func main() {
 		// Create the github client.
 		client := github.NewClient(tc)
 
-		_, err := getIssueList(ctx, client, "collabit", "thangs", &repoListOptions)
+		fmt.Printf("Orgs: %v, Repos: %v\n", len(orgs), len(defaultRepos))
 
-		if err != nil {
-			return nil
+		issueList, err := getIssueList(ctx, client, orgs[0], defaultRepos[0], &repoListOptions)
+
+		if err == nil {
+			fmt.Printf("Issue count: %v\n", len(issueList))
+			nag(ctx, client, comment, issueList)
 		}
 
+		/*
+			if err != nil {
+				return nil
+			}
+		*/
 		/*
 			// If the user passed a repo or repos, just get the contacts for those.
 			for _, repo := range repos {
@@ -237,24 +284,27 @@ func getIssueList(ctx context.Context, client *github.Client, owner, repo string
 	}
 
 	fmt.Printf("Issue count: %v\n", len(filteredIssues))
-	return filteredIssues, nil
+	return filteredIssues, err
 }
 
 // nag comments on a set of issues according to a template
-/*
-func nag(ctx context.Context, client *github.Client, owner, repo, comment string, number int, issues []*github.Issue) {
+func nag(ctx context.Context, client *github.Client, comment string, issues []*github.Issue) {
+	re := regexp.MustCompile(`https://api.github.com/repos/([\w]+)/([\w]+)`)
 	for _, issue := range issues {
 		// TODO: Process owner, repo, issue number
-		_, _, err := client.Issues.CreateComment(ctx, owner, repo, number, &github.IssueComment{
+		match := re.FindStringSubmatch(*issue.RepositoryURL)
+		owner, repo := match[1], match[2]
+		issueNumber := *issue.Number
+		fmt.Printf("Owner: %v, Repo: %v, Issue #: %v", owner, repo, issueNumber)
+
+		_, _, err := client.Issues.CreateComment(ctx, owner, repo, issueNumber, &github.IssueComment{
 			Body: &comment,
 		})
+		fmt.Println("=================================\n")
 
-		// TODO: Return the error
 		if err != nil {
-			return
+			fmt.Errorf("Error: %v", err)
 		}
 	}
-
 	return
 }
-*/
